@@ -294,8 +294,7 @@ python bot.py  # コンソール出力を確認
 ## 📞 サポート
 
 - **Issues**: [GitHub Issues](https://github.com/your-username/rtks-discord-bot/issues)
-- **Discord**: [サポートサーバー](https://discord.gg/your-invite)
-- **Wiki**: [プロジェクトWiki](https://github.com/your-username/rtks-discord-bot/wiki)
+- **Discord**: [サポートサーバー](https://discord.gg/6DfgrbXDjk)
 
 ## 🙏 謝辞
 
