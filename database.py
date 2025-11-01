@@ -65,11 +65,21 @@ class DatabaseManager:
                         last_daily TIMESTAMP,
                         mining_power INTEGER DEFAULT 1,
                         mining_auto BOOLEAN DEFAULT 0,
+                        pc_parts TEXT DEFAULT '{}',
+                        inventory TEXT DEFAULT '{}',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE(guild_id, user_id)
                     )
                 ''')
+                
+                # 既存テーブルにカラム追加（存在しない場合）
+                try:
+                    cursor.execute('ALTER TABLE user_economy ADD COLUMN pc_parts TEXT DEFAULT "{}"')
+                    cursor.execute('ALTER TABLE user_economy ADD COLUMN inventory TEXT DEFAULT "{}"')
+                except sqlite3.OperationalError:
+                    # カラムが既に存在する場合は無視
+                    pass
                 
                 # 経済システム - トランザクション履歴
                 cursor.execute('''
@@ -120,9 +130,19 @@ class DatabaseManager:
                         user_id INTEGER,
                         amount INTEGER,
                         mining_power INTEGER,
+                        hash_rate INTEGER DEFAULT 1,
+                        power_consumption INTEGER DEFAULT 100,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+                
+                # 既存テーブルにカラム追加（存在しない場合）
+                try:
+                    cursor.execute('ALTER TABLE mining_history ADD COLUMN hash_rate INTEGER DEFAULT 1')
+                    cursor.execute('ALTER TABLE mining_history ADD COLUMN power_consumption INTEGER DEFAULT 100')
+                except sqlite3.OperationalError:
+                    # カラムが既に存在する場合は無視
+                    pass
                 
                 # 許可ユーザーテーブル
                 cursor.execute('''

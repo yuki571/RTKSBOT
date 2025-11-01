@@ -1,12 +1,14 @@
-# Discord Bot Economy System
+# Discord Bot Economy System with PC Parts Mining
 import discord
 from discord import app_commands
 import asyncio
 import aiosqlite
 import random
+import json
 from datetime import datetime, timedelta
 import logging
 from database import db_manager
+from modules.pc_parts import PCPartsData
 
 # ログ設定
 economy_logger = logging.getLogger('economy')
@@ -128,39 +130,77 @@ class EconomySystem:
             return False, str(e)
     
     async def mining_reward(self, guild_id, user_id):
-        """マイニング報酬"""
+        """PCパーツベースマイニング報酬"""
         try:
             async with aiosqlite.connect(db_manager.db_path) as db:
+                # ユーザーのPC構成を取得
                 cursor = await db.execute('''
-                    SELECT mining_power FROM user_economy 
+                    SELECT pc_parts, mining_power FROM user_economy 
                     WHERE guild_id = ? AND user_id = ?
                 ''', (guild_id, user_id))
                 result = await cursor.fetchone()
                 
-                mining_power = result[0] if result else 1
+                if result and result[0]:
+                    # PC構成が存在する場合
+                    try:
+                        user_parts = json.loads(result[0])
+                        
+                        # PC構成の有効性チェック
+                        is_valid, message = PCPartsData.is_build_valid(user_parts)
+                        if not is_valid:
+                            return False, f"PC構成エラー: {message}"
+                        
+                        # ハッシュレート計算
+                        total_hash_rate = PCPartsData.calculate_total_hash_rate(user_parts)
+                        power_consumption = PCPartsData.calculate_power_consumption(user_parts)
+                        
+                        # マイニング効率計算（消費電力も考慮）
+                        efficiency = total_hash_rate / max(power_consumption, 1) if power_consumption > 0 else total_hash_rate
+                        
+                    except json.JSONDecodeError:
+                        # JSONパース失敗時は従来のmining_powerを使用
+                        total_hash_rate = result[1] if result[1] else 1
+                        efficiency = 1.0
+                        power_consumption = 100
+                else:
+                    # PC構成がない場合はデフォルト
+                    total_hash_rate = 1
+                    efficiency = 1.0
+                    power_consumption = 100
                 
-                # マイニング報酬計算（ランダム要素あり）
-                base_reward = self.mining_base_reward * mining_power
-                variance = random.uniform(0.7, 1.3)
-                final_reward = int(base_reward * variance)
+                # マイニング報酬計算
+                base_reward = int(self.mining_base_reward * total_hash_rate)
+                
+                # 効率ボーナス
+                efficiency_bonus = min(efficiency * 0.1, 0.5)  # 最大50%ボーナス
+                
+                # ランダム要素
+                variance = random.uniform(0.8, 1.2)
+                
+                # 電力コスト（高消費電力は報酬減少）
+                power_penalty = max(0.5, 1.0 - (power_consumption - 200) / 2000)
+                
+                final_reward = int(base_reward * (1 + efficiency_bonus) * variance * power_penalty)
                 
                 # 残高更新
                 success, new_balance = await self.update_balance(
                     guild_id, user_id, final_reward, "mining", 
-                    f"マイニング報酬 (パワー: {mining_power})"
+                    f"PCマイニング報酬 (ハッシュレート: {total_hash_rate} MH/s)"
                 )
                 
                 if success:
                     # マイニング履歴記録
                     await db.execute('''
-                        INSERT INTO mining_history (guild_id, user_id, amount, mining_power)
-                        VALUES (?, ?, ?, ?)
-                    ''', (guild_id, user_id, final_reward, mining_power))
+                        INSERT INTO mining_history (guild_id, user_id, amount, mining_power, hash_rate, power_consumption)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (guild_id, user_id, final_reward, total_hash_rate, total_hash_rate, power_consumption))
                     await db.commit()
                     
                     return True, {
                         'amount': final_reward,
-                        'mining_power': mining_power,
+                        'hash_rate': total_hash_rate,
+                        'power_consumption': power_consumption,
+                        'efficiency': round(efficiency, 2),
                         'new_balance': new_balance
                     }
                 
@@ -169,6 +209,85 @@ class EconomySystem:
         except Exception as e:
             economy_logger.error(f"Error in mining: {e}")
             return False, str(e)
+    
+    async def get_pc_build(self, guild_id, user_id):
+        """ユーザーのPC構成を取得"""
+        try:
+            async with aiosqlite.connect(db_manager.db_path) as db:
+                cursor = await db.execute('''
+                    SELECT pc_parts FROM user_economy 
+                    WHERE guild_id = ? AND user_id = ?
+                ''', (guild_id, user_id))
+                result = await cursor.fetchone()
+                
+                if result and result[0]:
+                    return json.loads(result[0])
+                else:
+                    return {}
+                    
+        except Exception as e:
+            economy_logger.error(f"Error getting PC build: {e}")
+            return {}
+    
+    async def update_pc_build(self, guild_id, user_id, pc_parts):
+        """ユーザーのPC構成を更新"""
+        try:
+            async with aiosqlite.connect(db_manager.db_path) as db:
+                # PC構成をJSONで保存
+                pc_parts_json = json.dumps(pc_parts)
+                
+                await db.execute('''
+                    UPDATE user_economy 
+                    SET pc_parts = ?
+                    WHERE guild_id = ? AND user_id = ?
+                ''', (pc_parts_json, guild_id, user_id))
+                await db.commit()
+                
+                return True
+                
+        except Exception as e:
+            economy_logger.error(f"Error updating PC build: {e}")
+            return False
+    
+    async def add_part_to_inventory(self, guild_id, user_id, part_type, part_name, part_data):
+        """パーツをユーザーのインベントリに追加"""
+        try:
+            async with aiosqlite.connect(db_manager.db_path) as db:
+                # インベントリから既存のパーツを取得
+                cursor = await db.execute('''
+                    SELECT inventory FROM user_economy 
+                    WHERE guild_id = ? AND user_id = ?
+                ''', (guild_id, user_id))
+                result = await cursor.fetchone()
+                
+                if result and result[0]:
+                    inventory = json.loads(result[0])
+                else:
+                    inventory = {}
+                
+                # パーツを追加
+                if part_type not in inventory:
+                    inventory[part_type] = {}
+                
+                if part_name in inventory[part_type]:
+                    inventory[part_type][part_name] += 1
+                else:
+                    inventory[part_type][part_name] = 1
+                
+                # インベントリを更新
+                inventory_json = json.dumps(inventory)
+                await db.execute('''
+                    UPDATE user_economy 
+                    SET inventory = ?
+                    WHERE guild_id = ? AND user_id = ?
+                ''', (inventory_json, guild_id, user_id))
+                await db.commit()
+                
+                return True
+                
+        except Exception as e:
+            economy_logger.error(f"Error adding part to inventory: {e}")
+            return False
     
     async def get_shop_items(self, guild_id):
         """ショップアイテム一覧取得"""
