@@ -219,12 +219,12 @@ class BotMonitorCog(commands.Cog):
     @app_commands.describe(
         member="監視対象のメンバー（BOTまたはユーザー）",
         notification_role="通知時にメンションするロール（任意）",
-        channel="監視通知を送るチャンネルを指定（必須）"
+        channel="監視通知を送るチャンネルを指定（任意）"
     )
     async def add_bot(self, ctx: commands.Context, 
                      member: discord.Member, 
-                     notification_role: Optional[discord.Role],
-                     channel: discord.TextChannel):
+                     notification_role: Optional[discord.Role] = None,
+                     channel: Optional[discord.TextChannel] = None):
         
         # Allow monitors of non-bot users for testing by a specific user ID
         TESTER_ID = 1290527159726637140
@@ -273,17 +273,8 @@ class BotMonitorCog(commands.Cog):
         # set this entity status for this guild only
         self._set_guild_bot_status(ctx.guild.id, member.id, is_online)
 
-        # the notification channel is required; ensure it's in this guild
-        if not channel:
-            embed = discord.Embed(
-                title="❌ エラー",
-                description="通知先チャンネルを必ず指定してください。",
-                color=discord.Color.red()
-            )
-            await ctx.send(embed=embed, ephemeral=True)
-            return
-        # ensure channel belongs to this guild
-        if channel.guild is None or channel.guild.id != ctx.guild.id:
+        # if a notification channel is specified with the add command, set it for this guild
+        if channel:
             if channel.guild and channel.guild.id != ctx.guild.id:
                 embed = discord.Embed(
                     title="❌ エラー",
@@ -292,7 +283,7 @@ class BotMonitorCog(commands.Cog):
                 )
                 await ctx.send(embed=embed, ephemeral=True)
                 return
-        self.notification_channel_ids[ctx.guild.id] = channel.id
+            self.notification_channel_ids[ctx.guild.id] = channel.id
             self.save_data()
             print(f"⚙️ 通知チャンネル: guild {ctx.guild.id} -> channel {channel.id}")
         
