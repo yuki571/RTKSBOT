@@ -1,0 +1,21 @@
+# 機密情報や一時ファイルをGit管理から除外
+# トークンや個人設定
+*.json
+!README.md
+!DETABASE/*.py
+
+# ログファイル
+*.log
+
+# Pythonキャッシュ
+__pycache__/
+*.pyc
+
+# ギルドごとの設定や匿名データ
+cogs/anonymous/
+guild_settings/
+DETABASE/__pycache__/
+
+# その他
+.env
+token.json
